@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
+import librosa
 import numpy as np
 from loguru import logger
 
@@ -26,6 +27,15 @@ def _apply_speed(wav: np.ndarray, speed: float) -> np.ndarray:
     new_length = int(len(wav) / speed)
     indices = np.linspace(0, len(wav) - 1, new_length)
     return np.interp(indices, np.arange(len(wav)), wav).astype(np.float32)
+
+
+def _apply_pitch(wav: np.ndarray, semitones: float, sample_rate: int) -> np.ndarray:
+    """Shift pitch by N semitones without changing duration (phase vocoder)."""
+    if semitones == 0.0:
+        return wav
+    return librosa.effects.pitch_shift(
+        wav.astype(np.float32), sr=sample_rate, n_steps=semitones
+    )
 
 
 class TTSService:
@@ -65,6 +75,7 @@ class TTSService:
 
         if len(text) <= 500 or info is None:
             wav = await self._model_manager.infer(model_id, text, ref_codes, ref_text)
+            wav = _apply_pitch(wav, request.pitch, settings.sample_rate)
             wav = _apply_speed(wav, request.speed)
             return encode_audio_complete(wav, fmt, settings.sample_rate)
 
@@ -77,6 +88,7 @@ class TTSService:
             wav_parts.append(wav)
 
         full_wav = np.concatenate(wav_parts)
+        full_wav = _apply_pitch(full_wav, request.pitch, settings.sample_rate)
         full_wav = _apply_speed(full_wav, request.speed)
         return encode_audio_complete(full_wav, fmt, settings.sample_rate)
 
@@ -103,6 +115,7 @@ class TTSService:
         writer = StreamingAudioWriter(fmt, settings.sample_rate)
 
         speed = request.speed
+        pitch = request.pitch
 
         try:
             if info and info.supports_streaming:
@@ -110,6 +123,7 @@ class TTSService:
                 async for chunk in self._model_manager.infer_stream(
                     model_id, text, ref_codes, ref_text
                 ):
+                    chunk = _apply_pitch(chunk, pitch, settings.sample_rate)
                     chunk = _apply_speed(chunk, speed)
                     encoded = writer.write_chunk(chunk)
                     if encoded:
@@ -121,6 +135,7 @@ class TTSService:
                     wav = await self._model_manager.infer(
                         model_id, chunk, ref_codes, ref_text
                     )
+                    wav = _apply_pitch(wav, pitch, settings.sample_rate)
                     wav = _apply_speed(wav, speed)
                     encoded = writer.write_chunk(wav)
                     if encoded:

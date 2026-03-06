@@ -13,6 +13,7 @@ class OpenAISpeechRequest(BaseModel):
     voice: str = "jo"
     response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] = "mp3"
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    pitch: float = Field(default=0.0, ge=-12.0, le=12.0, description="Pitch shift in semitones (-12 to +12)")
     stream: bool = False
 
 

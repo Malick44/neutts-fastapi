@@ -709,6 +709,15 @@
                             <span class="speed-val" id="speed-val">1.00x</span>
                         </div>
                     </div>
+                    <div class="field">
+                        <label class="field-label">Pitch</label>
+                        <div class="speed-row">
+                            <span style="font-size:0.7rem;color:var(--text-dim)">-12st</span>
+                            <input type="range" class="speed-range" id="pitch-range" min="-12" max="12" step="0.5" value="0">
+                            <span style="font-size:0.7rem;color:var(--text-dim)">+12st</span>
+                            <span class="speed-val" id="pitch-val">0.0st</span>
+                        </div>
+                    </div>
                     <div style="display:flex;gap:16px;flex-wrap:wrap">
                         <label class="check-row"><input type="checkbox" id="stream-chk"> Streaming</label>
                         <label class="check-row"><input type="checkbox" id="autoplay-chk" checked> Auto-play</label>
@@ -756,6 +765,8 @@
         const fmtSelect = $('fmt-select');
         const speedRange = $('speed-range');
         const speedVal = $('speed-val');
+        const pitchRange = $('pitch-range');
+        const pitchVal = $('pitch-val');
         const streamChk = $('stream-chk');
         const autoplayChk = $('autoplay-chk');
         const genBtn = $('gen-btn');
@@ -893,6 +904,10 @@
         // --- Speed ---
         speedRange.addEventListener('input', () => {
             speedVal.textContent = parseFloat(speedRange.value).toFixed(2) + 'x';
+        });
+        pitchRange.addEventListener('input', () => {
+            const v = parseFloat(pitchRange.value);
+            pitchVal.textContent = (v >= 0 ? '+' : '') + v.toFixed(1) + 'st';
         });
 
         // --- Model change: check language compatibility ---
@@ -1582,6 +1597,10 @@
                 }
             }
 
+            // Unlock audio element synchronously within user gesture (required by Safari/Chrome autoplay policy)
+            ensureAudioCtx();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
             genBtn.classList.add('spinning');
             genBtn.disabled = true;
             cancelBtn.style.display = 'block';
@@ -1604,6 +1623,7 @@
                         voice: selectedVoice,
                         response_format: fmtSelect.value,
                         speed: parseFloat(speedRange.value),
+                        pitch: parseFloat(pitchRange.value),
                         stream: streamChk.checked,
                     }),
                     signal: abortCtrl.signal,
@@ -1631,7 +1651,8 @@
                 }
 
                 genProgress.style.width = '100%';
-                const blob = new Blob(chunks);
+                const MIME_TYPES = { mp3: 'audio/mpeg', wav: 'audio/wav', opus: 'audio/ogg; codecs=opus', aac: 'audio/aac', flac: 'audio/flac', pcm: 'audio/wav' };
+                const blob = new Blob(chunks, { type: MIME_TYPES[fmtSelect.value] || 'audio/mpeg' });
                 const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
                 const sizeKB = (blob.size / 1024).toFixed(1);
 
@@ -1650,8 +1671,11 @@
                 );
 
                 if (autoplayChk.checked) {
-                    ensureAudioCtx();
-                    audio.play().catch(() => {});
+                    audio.play().catch(e => {
+                        if (e.name === 'NotAllowedError') {
+                            showStatus('Generated ✓  — click ▶ to play', 'success');
+                        }
+                    });
                 }
 
             } catch (e) {
